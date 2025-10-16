@@ -1,2 +1,2 @@
 # formazione_sou
-Repository personale per il corso SOU
+Repository personale per l'academy sourcesense
