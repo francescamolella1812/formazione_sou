@@ -1,2 +1,2 @@
 # formazione_sou
-Repository personale per l'academy sourcesense
+Repository personale per l'academy DevOps - sourcesense
