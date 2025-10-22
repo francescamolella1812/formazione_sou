@@ -1,6 +1,5 @@
 #!bin/bash
 
-
 read -p "Seleziona un numero: " numero
 for i in $(seq 1 $numero); do
 	if (( $i%2==0 )); then
