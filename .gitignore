@@ -1,4 +1,4 @@
 .ssh/
-*.bash
-*.git
-*.less
+*.bash*
+*.git*
+*.less*
