@@ -14,6 +14,7 @@ if [[ $numero =~ ^[0-9]+$ ]]; then
     echo "È un numero intero"
 else
     echo "Devi inserire un numero intero!!"
+    exit 2
 fi
 
 
