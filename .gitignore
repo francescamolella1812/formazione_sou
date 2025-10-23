@@ -3,3 +3,6 @@
 *.git*
 *.less*
 data/
+.vagrant/
+*.log
+*.tmp
