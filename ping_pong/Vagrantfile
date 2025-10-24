@@ -1,0 +1,55 @@
+# Uso la versione 2 del formato di configurazione di Vagrant
+Vagrant.configure("2") do |config|
+
+#Box Ubuntu 22.04 
+#Specifica quale immagine base (box) deve essere usata per creare le VM
+  config.vm.box = "ubuntu/jammy64"
+
+# Installazione di Docker
+#Inizializzazione di un blocco di testo multi-linea che contiene i comandi shell da eseguire durante la VM durante il provisioning
+  docker_provision = <<-SHELL
+  # Evito errori silenziosi durante l'installazione
+    set -euo pipefail
+    # Aggiorno la lista dei pacchetti disponibili. Best practice su Ubuntu
+    sudo apt-get update -y
+    # Installo docker 
+    sudo apt-get install -y docker.io
+    # Faccio partire subito docker e lo abilito all'avvio automatico della VM (enable)
+    sudo systemctl enable --now docker
+    # Scarico l'immagine ealen/echo-server da Docker Hub. || true serve per non far fallire lo script se l'immagine è già presente o il pull fallisce momentaneamente.
+    sudo docker pull ealen/echo-server:latest || true
+# Chiude il blocco di comandi shelle e salva tutto nel valore della variabile docker_provision.
+SHELL
+
+# NODE 1
+
+# creo una nuova macchina virtuale chiamata node1 e imposto risorse, hostname e provisioning specifici per il nodo.
+   config.vm.define "node1" do |node|
+     node.vm.hostname = "node1"
+     node.vm.provider "virtualbox" do |vb|
+       vb.name = "pingpong-vm1"
+       vb.memory = 1024
+       vb.cpus = 1
+     end
+     # Creo un port forwarding: "guest: 8080" è la porta interna alla VM (dove gira il container); host: 8081 è la porta sul mio pc.
+     # In questo modo posso accedere dal browser a http://localhost:8081 per parlare con la VM. auto_correct true risolve conflitti di porte 
+     node.vm.network "forwarded_port", guest: 8080, host: 8081, auto_correct: true
+     node.vm.provision "shell", inline: docker_provision
+   end
+
+# Creo la seconda macchina virtuale chiamata node2 e imposto le risorse, hostname e provisioning
+
+# NODE 2
+
+   config.vm.define "node2" do |node|
+     node.vm.hostname = "node2"
+     node.vm.provider "virtualbox" do |vb|
+       vb.name = "pingpong-vm2"
+       vb.memory = 1024
+       vb.cpus = 1
+     end
+     node.vm.network "forwarded_port", guest: 8080, host: 8082, auto_correct: true
+     node.vm.provision "shell", inline: docker_provision   
+    end
+end
+
