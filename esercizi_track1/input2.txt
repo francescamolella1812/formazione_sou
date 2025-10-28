@@ -1,0 +1,10 @@
+Ciao mi chiamo Francesca.
+Userò questo input per fare delle prove, per imparare Bash. 
+In particolare, vorrei usare questo script per verificare se so usare il comando egrep.
+Inserisco anche numeri apple 38294720 2038. Sono nata il 18/12/1998 a Roma.
+
+# Inserisco anche dei commenti per fare prove
+
+aaaaaa aaa aa
+
+pear orange apple
