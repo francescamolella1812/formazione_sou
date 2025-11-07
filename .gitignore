@@ -6,3 +6,4 @@ data/
 .vagrant/
 *.log
 *.tmp
+*tar*

@@ -8,7 +8,7 @@ Vagrant.configure("2") do |config|
 # Installazione di Docker
 #Inizializzazione di un blocco di testo multi-linea che contiene i comandi shell da eseguire durante la VM durante il provisioning
   docker_provision = <<-SHELL
-  # Evito errori silenziosi durante l'installazione
+  #†y Evito errori silenziosi durante l'installazione
     set -euo pipefail
     # Aggiorno la lista dei pacchetti disponibili. Best practice su Ubuntu
     sudo apt-get update -y

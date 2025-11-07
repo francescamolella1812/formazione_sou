@@ -1,0 +1,112 @@
+Mostrare come configurare Jenkins Master + Jenkins Agent a mano senza automazione. Collegarli tra loro.
+
+# PREPARAZIONE DELL'AMBIENTE 
+
+Mi connetto alla VM Rocky Linux tramite Vagrant ssh .
+
+Aggiorno i pacchetti con : sudo dnf update -y
+
+Installo Java (necessario per agent.jar) : sudo dnf install java-11-openjdk -y
+
+# CREAZIONE DELLA RETE DOCKER
+
+Permetto la comunicazione tra master e agent : sudo docker network create --subnet=172.20.0.0/16 my_network
+
+# CREAZIONE DIRECTORY CONDIVISA PER JENKINS 
+
+Jenkins salva i dati in /var/jenkins_home
+
+comandi : sudo mkdir -p /var/jenkins_home - sudo chown -R 1000:1000 /var/jenkins_home - sudo chmod -R 775 /var/jenkins_home
+
+# AVVIO MANUALE DEL JENKINS MASTER
+Avvio il container
+
+sudo docker run -d --name jenkins-master --restart always --network my_network --ip 172.20.0.10 -p 8080:8080 -p 50000:50000 -e JENKINS_WEB_SOCKET=true -v /var/jenkins_home:/var/jenkins_home jenkins/jenkins:lts
+
+# ACCESSO ALLA GUI
+
+Apro il browser e accedo . Creo utente admin e installo i plugin consigliati
+
+# CREAZIONE UTENTE DI SISTEMA PER L'AGENT
+
+sull'host creo l'utente per eseguire l'agent: sudo useradd -m -d /home/jenkins jenkins - sudo passwd jenkins
+
+# CREO LA DIRECTORY DI LAVORO PER L'AGENT
+
+sudo mkdir -p /home/jenkins jenkins 
+sudo chown -R jenkins:jenkins /home/jenkins
+
+# CAMBIO UTENTE
+
+su -u jenkins
+cd /home/jenkins/agent
+
+# CREO L'AGENT DA JENKINS
+
+Manage Jenkins -> nodes -> new node
+
+Inserisco nome, tipo di nodo, parametri e 'launch method' -> Launch agent by connecting it to the controller
+
+# AVVIO DELL'AGENT 
+
+Clicco sul nodo e ottengo i comandi da runnare sulla command line
+
+Scarico la JAR dell'agent: curl -o agent.jar http://xxx.xxx.xx.xxx:xxxx/jnlpJars/agent.jar
+
+Lancio il comando java -jar agent.jar -url http://xxx.xxx.xx.xxx:xxxx/ -secret <metto il secret>  -name "manual agent" -webSocket -workDir "/home/jenkins/agent"
+
+Il master e l'agent sono connessi tramite modalità jnlp
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+TRAMITE SSH
+
+1) INSTALLAZIONE E SETUP NODO AGENT 
+sudo dnf install java-11-openjdk -y
+sudo useradd -m -d /home/jenkins jenkins
+sudo passwd jenkins
+sudo usermod -aG docker jenkins
+sudo systemctl restart docker
+
+2) GENERAZIONE CHIAVI SSH SULL'AGENT
+
+Le chiavi devono essere generate sull'agent perchè sarà jenkins master a collegarsi via ssh usando quella chiave
+su - jenkins
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N ""
+cat ~/.ssh/id_ed25519.pub
+
+Copio la chiave pubblica
+
+3) Autorizzo la chiave privata sull'agent 
+
+echo "<chiave pubblica>" >> ~/.ssh/authorized_keys
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/authorized_keys
+
+4) Il master registra la host key dell'agent
+
+sudo docker exec -it jenkins-master bash
+ssh-keyscan -H <IP_AGENT> >> /var/jenkins_home/.ssh/known_hosts
+
+
+5)  AGGIUNTA CHIAVE PRIVATA IN JENKINS 
+
+su jenkins ui creo credenziali ssh
+
+Manage Jenkins -> Credentials -> Add Credentials
+
+imposto SSH USERNAME WITH PRIVATE KEY come kind
+username
+e copio la private key da cat ~/.ssh/id_ed25519 
+lascio passphrase vuoto e inserisco l'id
+
+6) CREAZIONE NODO 
+
+Creo il nodo SSH 
+
+Manage Jenkins ->  Nodes ->  New Node
+
+Type: permanent agent, Remote Root : directory root , Launch method ( launch agents via SSH) e credentials come ssh-key. 
+ Salvo, vado sul nodo, lancio e attendo. Se tutto è corretto il nodo mi appare come connesso. 
+

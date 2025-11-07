@@ -1,0 +1,85 @@
+---
+# play è il nome del playbook 
+- name: Deploy Jenkins Agent container (via Docker CLI with env vars)
+# Indica su quali host eseguire il playbook
+# In questo caso solo sulla macchina locale (la VM)
+  hosts: localhost
+  # eseguo come root
+  become: true
+# imposto le variabili
+  vars:
+  # URL del Jenkins master a cui l'agent si connetterà
+    jenkins_master_url: "http://192.168.50.111:8080"
+    # Nome del container agent
+    jenkins_agent_name: "agent1"
+    # Secret generato da Jenkins per questo agente (serve per autenticarsi)
+    jenkins_agent_secret: "a64db51cb0d6e6e781d5eb579bdb29f49bf324ba2dc0fefb0b962dc00b168339"
+    # Directory di lavoro dell'agent all'interno del container
+    jenkins_agent_workdir: "/home/jenkins/agent"
+      # Directory locale (sull’host) che verrà montata dentro il container
+    jenkins_agent_local_dir: "/home/vagrant/jenkins_agent"
+    # Nome della rete Docker creata in precedenza
+    jenkins_network: "my_network"
+    # IP statico assegnato all’agent nella rete Docker
+    jenkins_agent_ip: "172.20.0.11"
+
+  # mi assicuro che la directory jenkins agent esista
+  tasks:
+    - name: Ensure Jenkins agent directory exists
+    # controllo che esista come directory al path fornito e che abbia tutti i permessi. 
+      file:
+        path: "{{ jenkins_agent_local_dir }}"
+        state: directory
+        mode: "0777"
+    # rimuovo container agent se presenti ignorando eventuali errori ( se il container non esiste )
+    - name: Remove existing Jenkins agent container if present
+      command: docker rm -f {{ jenkins_agent_name }}
+      ignore_errors: true
+    # avvio l'agent 
+    # Se esite già un container con quel nome non fare nulla. Altrimenti avvia il container in background 
+    - name: Run Jenkins Agent container using environment variables
+      shell: |
+        docker ps --filter "name={{ jenkins_agent_name }}" --format '{{"{{.Names}}"}}' | grep -w {{ jenkins_agent_name }} \
+          || docker run -d \
+          --name {{ jenkins_agent_name }} \
+          --network {{ jenkins_network }} \
+          --ip {{ jenkins_agent_ip }} \
+          -v {{ jenkins_agent_local_dir }}:{{ jenkins_agent_workdir }} \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -e JENKINS_URL={{ jenkins_master_url }} \
+          -e JENKINS_AGENT_NAME={{ jenkins_agent_name }} \
+          -e JENKINS_SECRET={{ jenkins_agent_secret }} \
+          -e JENKINS_WEB_SOCKET=true \
+          -e JENKINS_AGENT_WORKDIR={{ jenkins_agent_workdir }} \
+          jenkins/inbound-agent:latest
+      args:
+        executable: /bin/bash
+
+    - name: Install Docker CLI inside Jenkins agent container
+      shell: |
+        docker exec -u root -i {{ jenkins_agent_name }} bash -c "
+          apt-get update -y && apt-get install -y docker.io && \
+          groupadd -f docker && \
+          chmod 666 /var/run/docker.sock
+        "
+      args:
+        executable: /bin/bash
+
+    # aspetto 10 secondi prima che compaia come attivo
+    - name: Wait a few seconds for the agent to register
+      pause:
+        seconds: 10
+    # mostro l'elenco di container attivi e li salvo nella variabile docker_ps
+    - name: Show running containers
+      command: docker ps
+      register: docker_ps
+    # debug
+    - debug:
+        var: docker_ps.stdout_lines
+    # mostro i log e li salvo in agent_logs
+    - name: Show agent logs
+      command: docker logs {{ jenkins_agent_name }} --tail 30
+      register: agent_logs
+    # debug
+    - debug:
+        var: agent_logs.stdout_lines

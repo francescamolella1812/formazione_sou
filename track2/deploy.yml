@@ -1,0 +1,146 @@
+
+# concetti chiave 
+# Idempotenza : moduli come yum, service, user, pip, stat evitano cambi inutili e fallimenti
+# Avere my_network come subnet fissa mi permette di dare IP statici al container. 
+
+# Parametri di Ansible: 
+# con STATE dico in che stato voglio che sia qualcosa. Con state dico come voglio che sia la risorsa.
+
+---
+# - name è il titolo del play
+- name: Install Docker and configure network
+  # hosts: all esegue il play su tutti gli host dell'inventory che appartengono al gruppo all.
+  hosts: all
+  # become: true esegue i task con privilegi di root
+  become: true
+  # dichiaro che userò una collezione ansible 'community.docker' Utile se uso moduli docker. Qui uso command, ma tenerla è ok.
+  collections:
+    - community.docker
+
+  # elenco di variabili per la rete docker.
+  vars:
+    docker_network_name: my_network
+    docker_subnet: 172.20.0.0/24
+    docker_gateway: 172.20.0.1
+  # tasks serve per elencare i passi operativi.
+  tasks:
+  # Aggiornamento dei pacchetti. Uso il modulo yum per aggiornare tutti i pacchetti alla versione più recente. 
+  # idempotente: se già aggiornati, non cambia nulla. 
+    - name: Update all system packages
+      yum:
+        name: "*"
+        state: latest
+  # Prerequisiti per Docker e Ansible. Installa strumenti necessari e dipendenze.
+    - name: Install prerequisites
+      yum:
+        name:
+          - yum-utils
+          - python3
+          - python3-pip
+          - device-mapper-persistent-data
+          - lvm2
+        state: present
+  # Aggiunta repository Docker CE : aggiunge il repo ufficiale Docker RHEL-like
+  # creates rende il task idempotente: esegue il comando solo se il file repo non esiste.
+    - name: Add Docker repository
+      command: yum-config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+      args:
+        creates: /etc/yum.repos.d/docker-ce.repo
+  # Installazione pacchetti docker
+    - name: Install Docker packages
+      yum:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        # state present : deve esistere il pacchetto installato -> assicurati che il pacchetto sia installato. Se già lo è non fare nulla. Se non lo è installalo.
+        state: present
+
+  # Abilita e avvia il sercizio automatico al boot
+    - name: Enable and start Docker service
+      # service è un modulo built-in di Ansible per controllare i demoni ( processi gestiti da systemd)
+      service:
+        name: docker
+        # deve essere in esecuzione. 
+        state: started
+        # deve partire automaticamente all'avvio
+        enabled: true
+  # Aggiunta utente Vagrant al gruppo docker. Permette all'utente vagrant di usare docker senza sudo. append: yes evita di rimpiazzare i gruppi esistenti. 
+    - name: Add vagrant user to docker group
+      user:
+        name: vagrant
+        groups: docker
+        # append appare quando modifico un utente. se append non fosse presente, ansible sostituirebbe tutti i gruppi dell'utente con solo 'docker'
+        # con append yes aggiungo docker mantenendo gli altri gruppi
+        append: yes
+
+    # Rimuove eventuali versioni vecchie della libreria Python Docker installate via RPM: evita conflitti tra versione RPM e quella che installo via pip.
+    # ignore_errors: yes se non esiste, non fallisce
+    - name: Remove old system docker SDK (if any)
+      yum:
+        name: python3-docker
+        # state absent -> deve essere rimosso
+        state: absent
+      ignore_errors: yes
+
+    # Installa versioni aggiornate e compatibili via pip 
+    - name: Install or upgrade Python Docker SDK properly
+      pip:
+        name:
+          - docker>=6.1.3
+          - requests>=2.31.0
+          - requests_unixsocket>=0.3.0
+        # state latest deve essere aggiornato alla versione più recente
+        state: latest
+        executable: pip3
+    # avvio di docker che serve per applicare eventuali cambi di gruppo/permessi
+    - name: Restart Docker service
+      service:
+        name: docker
+        # riavvia 
+        state: restarted
+    # verifica l'esistenza della socker Docker. Controlla che la socker UNIX di Docker esista ( segno che il daemon è vivo ). Salva il risultato in docker_sock
+    - name: Verify Docker socket exists
+      stat:
+      # indico il percorso di un file. viene usato in moduli che operano su file. Qui path è il percorso da controllare. controllo se il file o dir esistono
+        path: /var/run/docker.sock
+      # register salva il risultato di un task in una variabile. 
+      register: docker_sock
+    # Fai fallire se Docker non è su : se la socket non esiste, interrompi il play con un messaggio chiaro.
+    - name: Fail if Docker socket is missing
+      fail:
+        msg: "Docker socket not found! Docker daemon may not be running."
+      # il task viene eseguito solo se la condizione è vera.
+      when: not docker_sock.stat.exists
+
+    # Verifica se la rete docker già esiste
+    - name: Check if Docker network already exists
+      command: docker network inspect my_network
+      register: check_network
+      # Definisce quando un task deve essere considerato fallito. Normalmente, se docker network inspect esce con errore (es. rete non trovata), Ansible fallirebbe.
+      # Ma qui dico “Non è un errore se non esiste, è solo un controllo.” Quindi failed_when: false evita che il play si interrompa.
+      failed_when: false
+      # Serve per dire se un task ha effettivamente modificato qualcosa. Se non lo metto, Ansible potrebbe segnarlo come “changed” ogni volta, creando confusione.
+      changed_when: false
+
+    # Crea la rete se manca
+    - name: Create Docker bridge network manually if missing
+      command: >
+        docker network create
+        --driver bridge
+        --subnet 172.20.0.0/24
+        --gateway 172.20.0.1
+        my_network
+      # se l'ispezione ha dato errore (rc != 0) crea la rete bridge con subnet e gateway specifici. Così posso assegnare IP statisci ai container Jenkins
+      when: check_network.rc != 0
+    # Elenco reti create 
+    - name: Show created Docker networks
+      command: docker network ls
+      register: docker_networks
+      changed_when: false
+
+    - debug:
+        var: docker_networks.stdout_lines
+

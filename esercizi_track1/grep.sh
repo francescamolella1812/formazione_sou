@@ -19,4 +19,21 @@ egrep "apple|orange|pear" input2.txt
 
 ifconfig | grep "\."
 
+# Regex per matchare gli indirizzi IP di classe a
 
+ifconfig | grep -E "inet [0-9]1[01][0-9]|12[0-7]\."
+
+# Regex per marchare gli indirizzi IP di classe b
+
+ifconfig | grep -E "1[2-3][8-9]|1[34][0-9]|1[56][0-9]|19[0-1]"
+
+# Regex per matchare gli indirizzi IP di classe c
+
+grep -E "19[2-9]|2[0-2][0-3]"
+
+# Matchare gli IP classe D 
+
+grep -E "22[4-9]|23[1-9]
+
+# Matchare gli IP di classe E
+grep -E "2[45][0-9]"

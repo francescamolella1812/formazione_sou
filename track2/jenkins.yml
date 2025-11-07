@@ -1,0 +1,95 @@
+
+# Crea la cartella dati (se non esiste).
+# Scarica l’immagine Jenkins. 
+# Rimuove vecchi container Jenkins. 
+# Avvia un container nuovo, con rete e IP statici. 
+# Attende che Jenkins sia pronto.
+# Mostra il link d’accesso.
+---
+# name è il nome del play
+- name: Deploy Jenkins Master in Docker
+# hosts: localhost dice di eseguire il playbook solo sulla macchina locale, non su host remoti.
+  hosts: localhost
+  # connection: local dice di eseguire i comandi direttamente in locale. utile se lavoro dentro vm
+  connection: local
+  # i task vengono eseguiti con privilegi root
+  become: true
+
+  # imposto le variabili per rendere il playbook flessibile.
+  vars:
+    jenkins_container_name: jenkins-master
+    jenkins_image: jenkins/jenkins:lts
+    jenkins_ip: 172.20.0.10
+    jenkins_network: my_network
+    jenkins_http_port: 8080
+    jenkins_agent_port: 50000
+    jenkins_data_dir: /var/jenkins_home
+
+  tasks:
+
+    - name: Ensure Jenkins data directory exists
+      file:
+      # indico dove deve essere creata la dir.
+        path: "{{ jenkins_data_dir }}"
+        # ansible deve assicurarsi che sia una dir.
+        state: directory
+        # imposto i permessi utente : 1000 è l'ID utente standard di jenkins dentro il container
+        owner: 1000
+        group: 1000
+        # lettura per tutti, scrittura solo per l'owner
+        mode: '0755'
+
+    # uso pull per scaricare l'immagine jenkins 
+    - name: Pull Jenkins image (CLI fallback)
+      command: docker pull {{ jenkins_image }}
+
+    # rimuovere un container esistente se c'è
+    - name: Remove existing Jenkins container if present
+      command: docker rm -f {{ jenkins_container_name }}
+      register: remove_result
+      # evito che il task fallisca se il container non esiste
+      failed_when: false
+      # segno ' changed' solo se il container è stato davvero rimosso
+      changed_when: "'No such container' not in remove_result.stderr"
+
+    # lancio il container jenkins in background -d con tutte le impostazioni giuste. 
+    - name: Run Jenkins container (CLI fallback)
+    # - v monta la directory dati del sistema host dentro il container (così i dati persistono anche se il container viene ricreato)
+    # - p espone le porte
+    # --ip assegna un ip statico
+    # --restart always -> se la macchina si riavvia jenkins riparte automaticamente.
+    # dico: avvia jenkins dentro docker con ip fisso, porte aperte e dati persistenti.
+      command: >
+        docker run -d
+        --name {{ jenkins_container_name }}
+        --restart always
+        --network {{ jenkins_network }}
+        --ip {{ jenkins_ip }}
+        -p {{ jenkins_http_port }}:8080
+        -p {{ jenkins_agent_port }}:50000
+        -v {{ jenkins_data_dir }}:/var/jenkins_home
+        -v /var/run/docker.sock:/var/run/docker.sock
+        -v /usr/bin/docker:/usr/bin/docker
+        {{ jenkins_image }}
+        
+    #  utilizzo un piccolo script bash per aspettare che jenkins diventi raggiungibile
+    - name: Wait for Jenkins web interface
+    # provo fino a 10 volte, dormendo 10 secondi tra una prova e l'altra. 
+    # con curl -sf : provo a contattare l’indirizzo web; -s = silenzioso, -f = fallisce in caso di errore HTTP.
+    # register salva il risultato dentro la variabile jenkins_status
+      shell: |
+        for i in {1..10}; do
+          curl -sf http://localhost:{{ jenkins_http_port }} && exit 0
+          sleep 10
+        done
+        exit 1
+      register: jenkins_status
+      changed_when: false
+
+    - name: Show Jenkins access info
+      debug:
+        msg: |
+          Jenkins Master container is running.
+          Access it via browser at:
+          http://192.168.50.111:{{ jenkins_http_port }}
+
