@@ -1,0 +1,38 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Check giorno') {
+            steps {
+                script {
+                    def day = new Date().getDay()
+
+                    def giorni = [
+                        0: "Dom",
+                        1: "Lun",
+                        2: "Mar",
+                        3: "Mer",
+                        4: "Gio",
+                        5: "Ven",
+                        6: "Sab"
+                    ]
+
+                    echo "Oggi è: ${giorni[day]}"
+
+                    if (day == 0 || day == 6) {
+                        echo "Weekend: build NON eseguita."
+                        error("Stop: oggi è weekend.")
+                    }
+                }
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo "Eseguo la build"
+		sh 'docker build -t test-giorni-settimana . '
+            }
+        }
+    }
+}
+

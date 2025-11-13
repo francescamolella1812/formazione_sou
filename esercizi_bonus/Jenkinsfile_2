@@ -1,0 +1,32 @@
+pipeline {
+    agent any
+
+    parameters {
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['DEVELOPMENT', 'PRODUCTION'],
+        )
+    }
+
+    stages {
+
+        stage('DEVELOPMENT') {
+            when {
+                expression { params.ENVIRONMENT == 'DEVELOPMENT' }
+            }
+            steps {
+                echo "Stage DEVELOPMENT eseguito. ENVIRONMENT = ${params.ENVIRONMENT}"
+            }
+        }
+
+        stage('PRODUCTION') {
+            when {
+                expression { params.ENVIRONMENT == 'PRODUCTION' }
+            }
+            steps {
+                echo "Stage PRODUCTION eseguito. ENVIRONMENT = ${params.ENVIRONMENT}"
+            }
+        }
+    }
+}
+
