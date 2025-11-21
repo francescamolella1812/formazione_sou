@@ -1,1 +1,0 @@
-kind v0.30.0 go1.25.0 darwin/amd64

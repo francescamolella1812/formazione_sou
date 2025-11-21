@@ -1,0 +1,97 @@
+---
+- name: Create Jenkins Agent via REST API
+  hosts: localhost
+  connection: local
+  become: false
+  vars:
+    jenkins_url: "http://192.168.50.111:8080"
+    jenkins_user: "admin"
+    jenkins_pass: "molels1812"
+    agent_name: "api-agent"
+    agent_workdir: "/home/jenkins/agent"
+    cookie_file: "/tmp/jenkins_cookie.txt"
+
+  tasks:
+    # Ottieni il crumb Jenkins
+    - name: Get Jenkins crumb
+      shell: |
+        curl -s \
+          -u "{{ jenkins_user }}:{{ jenkins_pass }}" \
+          -c {{ cookie_file }} \
+          "{{ jenkins_url }}/crumbIssuer/api/json"
+      register: crumb_response
+   
+    - name: DEBUG crumb raw output
+      debug:
+        var: crumb_response.stdout
+
+
+    - name: Parse crumb
+      set_fact:
+        jenkins_crumb: "{{ crumb_response.stdout | from_json | json_query('crumb') }}"
+
+    # Genera API Token
+    - name: Generate API token
+      shell: |
+        curl -s -X POST \
+          -u "{{ jenkins_user }}:{{ jenkins_pass }}" \
+          -H "Jenkins-Crumb: {{ jenkins_crumb }}" \
+          --cookie {{ cookie_file }} \
+          -d "newTokenName=ansible-token" \
+          "{{ jenkins_url }}/me/descriptorByName/jenkins.security.ApiTokenProperty/generateNewToken"
+      register: token_response
+
+    - name: Parse API Token
+      set_fact:
+        jenkins_token: "{{ token_response.stdout | from_json | json_query('data.tokenValue') }}"
+
+    # Crea Agent Node via API
+    - name: Create Jenkins node
+      shell: |
+        curl -s -X POST \
+          -u "{{ jenkins_user }}:{{ jenkins_token }}" \
+          -H "Jenkins-Crumb: {{ jenkins_crumb }}" \
+          -H "Content-Type: application/x-www-form-urlencoded" \
+          --cookie {{ cookie_file }} \
+          --data-urlencode 'json={
+            "name": "{{ agent_name }}",
+            "nodeDescription": "Agent via API",
+            "numExecutors": "1",
+            "remoteFS": "{{ agent_workdir }}",
+            "labelString": "api-agent",
+            "mode": "EXCLUSIVE",
+            "launcher": { "stapler-class": "hudson.slaves.JNLPLauncher" },
+            "retentionStrategy": {
+              "stapler-class": "hudson.slaves.RetentionStrategy$Always"
+            }
+          }' \
+          "{{ jenkins_url }}/computer/doCreateItem?name={{ agent_name }}&type=hudson.slaves.DumbSlave"
+      register: create_node
+
+    # Recupera secret JNLP
+    - name: Get JNLP secret
+      shell: |
+        curl -s -u "{{ jenkins_user }}:{{ jenkins_token }}" \
+          "{{ jenkins_url }}/computer/{{ agent_name }}/jenkins-agent.jnlp"
+      register: jnlp_file
+
+    - name: DEBUG crumb raw output
+      debug:
+        var: crumb_response.stdout
+
+    - name: Parse secret from JNLP
+      set_fact:
+        agent_secret: "{{ jnlp_file.stdout | regex_findall('<argument>(.*?)</argument>') | first }}"
+
+    # Avvia inbound-agent Docker
+    - name: Start inbound Jenkins Agent
+      shell: |
+        docker rm -f {{ agent_name }} 2>/dev/null || true
+        docker run -d \
+          --name {{ agent_name }} \
+          -e JENKINS_URL="{{ jenkins_url }}" \
+          -e JENKINS_SECRET="{{ agent_secret }}" \
+          -e JENKINS_AGENT_NAME="{{ agent_name }}" \
+          -e JENKINS_AGENT_WORKDIR="{{ agent_workdir }}" \
+          jenkins/inbound-agent
+

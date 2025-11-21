@@ -1,9 +1,0 @@
-.ssh/
-*.bash*
-*.git*
-*.less*
-data/
-.vagrant/
-*.log
-*.tmp
-*tar*
