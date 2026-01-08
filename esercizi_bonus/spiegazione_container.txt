@@ -1,0 +1,58 @@
+Esercizio bonus: 
+# avvio la VM configurata in Vagrant.
+
+Vagrant up 
+
+# entro nella VM
+
+Vagrant ssh
+
+# installo il pacchetto che contiene nsenter
+Sudo dnf install -y util-linux
+
+# lancio un contener basato su ubunto ed eseguo il comando sleep 300 in background cosi che il 
+container rimanga attivo per 300 secondi
+
+docker run -d --name test-ubuntu ubuntu:latest sleep 300
+
+# mostra i container attivi sulla vm host
+
+docker ps
+
+# recupero il pid del processo principale del container dal punto di vista dell'host
+docker inspect -f '{{.State.Pid}}' test-ubuntu
+
+# apro una shell nello stesso namespace del container
+sudo nsenter --target 75564 --mount --uts --ipc --net --pid -- bash
+
+# mostro i processi visibili dentro il container
+
+ps aux
+
+# dal punto di vista dell'host, mostra lo stesso processo sleep con un pid diverso 
+ps -ef | grep sleep
+
+# termina tutti i processi nel namespace del container
+docker stop test-ubuntu
+
+# dal punto di vista della sheel nsenter, termina il processo pid1 del container (sleep 300)
+kill 1
+
+
+Risposte alle domande:
+
+1. Il pid del processo lanciato è uguale o diverso tra dentro e fuori il container?
+
+Diverso. Dentro il container sleep 300 ha pid 1, fuori ha un pid diverso (75564)
+
+2. Cosa succede se si prova a stoppare il container mentre il processo creato è ancora attivo?
+
+Tutti i processi nel container vengono terminati. Il container si ferma e il processo non 
+esiste più
+
+3. Cosa succede se si prova a killare il processo da dentro il container?
+
+se si killa il pid 1 (sleep 300) il container si arresta
+tutti gli altri processi vengono terminati.
+
+
